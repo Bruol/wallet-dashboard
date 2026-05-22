@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wallet Expenses</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b1020; --card:#121a2f; --card2:#18223d; --text:#eef4ff; --muted:#9fb0d0; --accent:#72e6ac; --warn:#ffcc66; --line:#293655; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at top left, #1b2b58 0, #0b1020 38rem); color:var(--text); }
+    main { max-width: 1180px; margin: 0 auto; padding: 28px 18px 48px; }
+    header { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom:22px; }
+    h1 { margin:0; font-size: clamp(28px, 5vw, 48px); letter-spacing:-0.04em; }
+    .subtitle { color:var(--muted); margin-top:6px; }
+    .pill { background:rgba(114,230,172,.12); color:var(--accent); border:1px solid rgba(114,230,172,.35); border-radius:999px; padding:8px 12px; font-size:13px; white-space:nowrap; }
+    .grid { display:grid; grid-template-columns: repeat(12, 1fr); gap:14px; }
+    .card { background:linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.02)); border:1px solid rgba(255,255,255,.08); box-shadow: 0 20px 60px rgba(0,0,0,.22); border-radius:22px; padding:18px; overflow:hidden; }
+    .stat { grid-column: span 4; min-height:130px; }
+    .wide { grid-column: span 8; }
+    .side { grid-column: span 4; }
+    .full { grid-column: 1 / -1; }
+    .label { color:var(--muted); font-size:13px; text-transform:uppercase; letter-spacing:.12em; }
+    .value { font-size: clamp(30px, 4vw, 52px); font-weight:800; letter-spacing:-.05em; margin-top:10px; }
+    .value.small { font-size:34px; }
+    .chart { min-height:260px; display:flex; align-items:end; gap:9px; padding-top:24px; }
+    .barwrap { flex:1; display:flex; flex-direction:column; gap:9px; align-items:center; min-width:0; }
+    .bar { width:100%; border-radius:12px 12px 4px 4px; min-height:4px; background:linear-gradient(180deg, var(--accent), #4a92ff); box-shadow: 0 0 30px rgba(114,230,172,.25); }
+    .barlabel { color:var(--muted); font-size:11px; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+    .row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 0; border-bottom:1px solid rgba(255,255,255,.07); }
+    .row:last-child { border-bottom:0; }
+    .merchant { font-weight:650; }
+    .meta { color:var(--muted); font-size:13px; margin-top:3px; }
+    .amount { font-variant-numeric:tabular-nums; font-weight:800; color:var(--accent); white-space:nowrap; }
+    .amount.negative { color:#ff8e8e; }
+    pre { white-space:pre-wrap; overflow:auto; background:#07101f; border:1px solid var(--line); border-radius:14px; padding:12px; color:#bdd0ff; }
+    code { color:#bdd0ff; }
+    .empty { color:var(--muted); padding:24px 0; }
+    @media (max-width: 780px) { header { display:block; } .pill{display:inline-block;margin-top:14px}.stat,.wide,.side { grid-column: 1 / -1; } .chart{min-height:180px;} }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Wallet Expenses</h1>
+      <div class="subtitle">Live dashboard from your iPhone Shortcut webhook</div>
+    </div>
+    <div id="status" class="pill">connecting…</div>
+  </header>
+
+  <section class="grid">
+    <div class="card stat"><div class="label">Total spend</div><div id="total" class="value">—</div></div>
+    <div class="card stat"><div class="label">Transactions</div><div id="count" class="value">—</div></div>
+    <div class="card stat"><div class="label">This month</div><div id="month" class="value small">—</div></div>
+    <div class="card wide"><div class="label">Monthly trend</div><div id="chart" class="chart"></div></div>
+    <div class="card side"><div class="label">Top merchants</div><div id="merchants"></div></div>
+    <div class="card full"><div class="label">Latest transactions</div><div id="txs"></div></div>
+    <div class="card full">
+      <div class="label">Webhook endpoint</div>
+      <p class="meta">POST JSON to <code>/webhook</code>. Common Apple Wallet/Shortcut keys are auto-normalized: amount, merchant, date, currency, category, card.</p>
+      <pre id="example"></pre>
+    </div>
+  </section>
+</main>
+<script>
+const fmt = (n, currency='CHF') => new Intl.NumberFormat(undefined, {style:'currency', currency}).format(Number(n||0));
+const fmtMulti = totals => Object.entries(totals || {}).map(([currency, amount]) => fmt(amount, currency)).join(' + ') || '—';
+const fmtMonth = (byMonthCurrency, ym) => fmtMulti(Object.fromEntries(Object.entries((byMonthCurrency || {})[ym] || {}).map(([currency, cents]) => [currency, Math.abs(cents/100)])));
+const dateFmt = s => s ? new Date(s).toLocaleString(undefined, {dateStyle:'medium', timeStyle:'short'}) : 'No date';
+let state = {transactions: [], summary: null};
+
+document.getElementById('example').textContent = JSON.stringify({
+  merchant: 'Example Grocery', amount: 12.40, currency: 'CHF', date: new Date().toISOString(), category: 'Groceries', card: 'Apple Wallet'
+}, null, 2);
+
+async function load(){
+  const [summary, txs] = await Promise.all([
+    fetch('/api/summary').then(r=>r.json()),
+    fetch('/api/transactions').then(r=>r.json())
+  ]);
+  state.summary = summary;
+  state.transactions = txs.transactions || [];
+  render();
+}
+function signedSpend(cents){ return Math.abs((cents||0)/100); }
+function render(){
+  const s = state.summary || {count:0,total:0,currency:'CHF',by_month:{},by_merchant:{}};
+  const currency = s.currency || 'CHF';
+  document.getElementById('total').textContent = fmtMulti(s.totals_by_currency);
+  document.getElementById('count').textContent = s.count || 0;
+  const ym = new Date().toISOString().slice(0,7);
+  document.getElementById('month').textContent = fmtMonth(s.by_month_currency, ym);
+  renderChart(s.by_month||{}, currency);
+  renderMerchants(s.by_merchant||{}, currency);
+  renderTxs(state.transactions, currency);
+}
+function renderChart(byMonth, currency){
+  const el = document.getElementById('chart');
+  const entries = Object.entries(byMonth).sort(([a],[b])=>a.localeCompare(b)).slice(-12);
+  if(!entries.length){ el.innerHTML = '<div class="empty">No transactions yet</div>'; return; }
+  const max = Math.max(...entries.map(([,v])=>Math.abs(v)), 1);
+  el.innerHTML = entries.map(([m,c]) => `<div class="barwrap" title="${m}: ${fmt(Math.abs(c/100), currency)}"><div class="bar" style="height:${Math.max(4, Math.abs(c)/max*220)}px"></div><div class="barlabel">${m.slice(5) || m}</div></div>`).join('');
+}
+function renderMerchants(byMerchant, currency){
+  const el = document.getElementById('merchants');
+  const entries = Object.entries(byMerchant).slice(0,10);
+  if(!entries.length){ el.innerHTML = '<div class="empty">No merchants yet</div>'; return; }
+  el.innerHTML = entries.map(([m,c]) => {
+    const parts = m.split(' · ');
+    const cur = parts.length > 1 ? parts.pop() : currency;
+    const label = parts.join(' · ') || m;
+    return `<div class="row"><div class="merchant">${escapeHtml(label)}</div><div class="amount">${fmt(Math.abs(c/100), cur)}</div></div>`;
+  }).join('');
+}
+function renderTxs(txs, currency){
+  const el = document.getElementById('txs');
+  if(!txs.length){ el.innerHTML = '<div class="empty">Waiting for first webhook…</div>'; return; }
+  el.innerHTML = txs.slice(0,50).map(t => `<div class="row"><div><div class="merchant">${escapeHtml(t.merchant||'Unknown merchant')}</div><div class="meta">${dateFmt(t.transaction_date || t.received_at)}${t.category?' · '+escapeHtml(t.category):''}${t.card?' · '+escapeHtml(t.card):''}</div></div><div class="amount ${Number(t.amount)<0?'negative':''}">${fmt(Math.abs(t.amount||0), t.currency||currency)}</div></div>`).join('');
+}
+function escapeHtml(s){return String(s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
+
+load().catch(err => { document.getElementById('status').textContent = 'load failed'; console.error(err); });
+const es = new EventSource('/events');
+es.onopen = () => document.getElementById('status').textContent = 'live';
+es.onerror = () => document.getElementById('status').textContent = 'reconnecting…';
+es.onmessage = ev => { try { const msg = JSON.parse(ev.data); if(msg.type === 'transaction') load(); } catch(e){} };
+</script>
+</body>
+</html>

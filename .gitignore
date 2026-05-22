@@ -1,0 +1,21 @@
+# Runtime data
+*.sqlite3
+*.sqlite3-*
+data/
+last-raw-payload.json
+last-normalized-transaction.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local config / secrets
+.env
+*.env
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/

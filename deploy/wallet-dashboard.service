@@ -1,0 +1,19 @@
+[Unit]
+Description=Apple Wallet expenses webhook dashboard
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/wallet-dashboard
+Environment=WALLET_DASHBOARD_HOST=127.0.0.1
+Environment=WALLET_DASHBOARD_PORT=8787
+Environment=WALLET_DASHBOARD_DIR=/var/lib/wallet-dashboard
+# Optional: require ?token=... or Authorization: Bearer ... for POST /webhook
+# Environment=WALLET_DASHBOARD_TOKEN=change-me
+ExecStart=/usr/bin/python3 /opt/wallet-dashboard/server.py
+Restart=on-failure
+RestartSec=2
+User=root
+
+[Install]
+WantedBy=multi-user.target
