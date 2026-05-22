@@ -7,6 +7,8 @@ import threading
 import time
 import uuid
 import hashlib
+import mimetypes
+from pathlib import Path
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -19,6 +21,7 @@ DB_PATH = os.path.join(APP_DIR, "transactions.sqlite3")
 HOST = os.environ.get("WALLET_DASHBOARD_HOST", "127.0.0.1")
 PORT = int(os.environ.get("WALLET_DASHBOARD_PORT", "8787"))
 WEBHOOK_TOKEN = os.environ.get("WALLET_DASHBOARD_TOKEN", "")
+STATIC_DIR = Path(os.environ.get("WALLET_DASHBOARD_STATIC_DIR", Path(__file__).resolve().parent / "static"))
 DISPLAY_CURRENCY = os.environ.get("WALLET_DASHBOARD_DISPLAY_CURRENCY", "CHF").upper()
 FX_CACHE_TTL_SECONDS = int(os.environ.get("WALLET_DASHBOARD_FX_CACHE_TTL", "3600"))
 
@@ -388,17 +391,31 @@ class Handler(BaseHTTPRequestHandler):
         auth = self.headers.get("Authorization", "")
         return token == WEBHOOK_TOKEN or auth == f"Bearer {WEBHOOK_TOKEN}"
 
+    def send_static(self, request_path):
+        rel = request_path.lstrip("/") or "index.html"
+        if rel == "dashboard":
+            rel = "index.html"
+        candidate = (STATIC_DIR / rel).resolve()
+        static_root = STATIC_DIR.resolve()
+        if static_root not in candidate.parents and candidate != static_root:
+            return self.send_json({"error": "not found"}, 404)
+        if candidate.is_dir():
+            candidate = candidate / "index.html"
+        if not candidate.exists() or not candidate.is_file():
+            return self.send_json({"error": "not found"}, 404)
+        data = candidate.read_bytes()
+        content_type = mimetypes.guess_type(str(candidate))[0] or "application/octet-stream"
+        if candidate.name == "index.html":
+            content_type = "text/html; charset=utf-8"
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_GET(self):
         parsed = urlparse(self.path)
-        if parsed.path in ("/", "/dashboard"):
-            with open("/opt/wallet-dashboard/static/index.html", "rb") as f:
-                data = f.read()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-        elif parsed.path == "/api/transactions":
+        if parsed.path == "/api/transactions":
             limit = int(parse_qs(parsed.query).get("limit", [500])[0])
             self.send_json({"transactions": query_transactions(min(limit, 5000))})
         elif parsed.path == "/api/summary":
@@ -427,7 +444,7 @@ class Handler(BaseHTTPRequestHandler):
                     except ValueError:
                         pass
         else:
-            self.send_json({"error": "not found"}, 404)
+            self.send_static(parsed.path)
 
     def do_POST(self):
         parsed = urlparse(self.path)

@@ -67,6 +67,8 @@ Normalized fields include:
 ```bash
 git clone https://github.com/YOUR_USER/apple-wallet-dashboard.git
 cd apple-wallet-dashboard
+npm install
+npm run build
 python3 server.py
 ```
 
@@ -91,6 +93,7 @@ Environment variables:
 - `WALLET_DASHBOARD_HOST`: bind host, default `127.0.0.1`
 - `WALLET_DASHBOARD_PORT`: HTTP port, default `8787`
 - `WALLET_DASHBOARD_DIR`: data directory, default `/var/lib/wallet-dashboard`
+- `WALLET_DASHBOARD_STATIC_DIR`: built SvelteKit static directory, default `./static` next to `server.py`
 - `WALLET_DASHBOARD_TOKEN`: optional webhook token. If set, `POST /webhook` requires either:
   - `?token=YOUR_TOKEN`, or
   - `Authorization: Bearer YOUR_TOKEN`
@@ -108,8 +111,11 @@ python3 server.py
 Install files:
 
 ```bash
+npm install
+npm run build
 sudo mkdir -p /opt/wallet-dashboard /var/lib/wallet-dashboard
 sudo cp server.py /opt/wallet-dashboard/server.py
+sudo rm -rf /opt/wallet-dashboard/static
 sudo cp -r static /opt/wallet-dashboard/static
 sudo cp deploy/wallet-dashboard.service /etc/systemd/system/wallet-dashboard.service
 sudo systemctl daemon-reload

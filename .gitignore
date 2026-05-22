@@ -11,6 +11,10 @@ __pycache__/
 .venv/
 venv/
 
+# SvelteKit / Node
+node_modules/
+.svelte-kit/
+
 # Local config / secrets
 .env
 *.env
