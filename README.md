@@ -15,6 +15,7 @@ It was built for a Tailscale tailnet: your iPhone Shortcut posts JSON to a priva
 - **SQLite persistence** with duplicate prevention by transaction fingerprint
 - **Live dashboard** using Server-Sent Events
 - **Per-currency totals** so CHF/EUR/etc. are not incorrectly merged
+- **CHF display total**: the top-line total converts EUR and other currencies to CHF using [Frankfurter](https://frankfurter.dev/)
 - **No framework dependencies**: Python standard library only
 - **Tailscale Serve ready** for private HTTPS and MagicDNS access
 
@@ -22,7 +23,7 @@ It was built for a Tailscale tailnet: your iPhone Shortcut posts JSON to a priva
 
 The dashboard shows:
 
-- total spend per currency
+- total spend converted to CHF
 - transaction count
 - current-month spend per currency
 - monthly trend
@@ -193,7 +194,7 @@ Health check.
 
 ### `GET /api/summary`
 
-Summary totals, monthly data, and top merchants.
+Summary totals, monthly data, top merchants, and exchange-rate metadata. The `total_chf` field is computed by converting all currency totals to CHF via Frankfurter and caching rates in memory.
 
 ### `GET /api/transactions?limit=500`
 
@@ -222,6 +223,15 @@ The app stores raw JSON for each transaction in the database. Keep the database 
 - Prefer exposing the app only through Tailscale Serve or another private network.
 - Set `WALLET_DASHBOARD_TOKEN` if the endpoint is reachable by anything other than trusted tailnet devices.
 - Do not commit `transactions.sqlite3`, raw payload files, logs, or Shortcut exports.
+
+## Development
+
+Run the tests and syntax check:
+
+```bash
+python3 -m unittest discover -s tests -v
+python3 -m py_compile server.py
+```
 
 ## License
 

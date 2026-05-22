@@ -11,16 +11,22 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
+from urllib.error import URLError, HTTPError
+from urllib.request import Request, urlopen
 
 APP_DIR = os.environ.get("WALLET_DASHBOARD_DIR", "/var/lib/wallet-dashboard")
 DB_PATH = os.path.join(APP_DIR, "transactions.sqlite3")
 HOST = os.environ.get("WALLET_DASHBOARD_HOST", "127.0.0.1")
 PORT = int(os.environ.get("WALLET_DASHBOARD_PORT", "8787"))
 WEBHOOK_TOKEN = os.environ.get("WALLET_DASHBOARD_TOKEN", "")
+DISPLAY_CURRENCY = os.environ.get("WALLET_DASHBOARD_DISPLAY_CURRENCY", "CHF").upper()
+FX_CACHE_TTL_SECONDS = int(os.environ.get("WALLET_DASHBOARD_FX_CACHE_TTL", "3600"))
 
 os.makedirs(APP_DIR, exist_ok=True)
 subscribers = []
 subscribers_lock = threading.Lock()
+fx_cache = {}
+fx_cache_lock = threading.Lock()
 
 AMOUNT_KEYS = ("amount", "transactionAmount", "value", "total", "cost", "price", "sum")
 MERCHANT_KEYS = ("merchant", "merchantName", "merchant_name", "payee", "store", "vendor", "name", "description", "title")
@@ -246,9 +252,33 @@ def query_transactions(limit=500):
     return [public_tx(r) for r in rows]
 
 
+def get_exchange_rate(base, target=DISPLAY_CURRENCY):
+    base = (base or target).upper()
+    target = (target or DISPLAY_CURRENCY).upper()
+    if base == target:
+        return 1.0
+    key = (base, target)
+    now = time.time()
+    with fx_cache_lock:
+        cached = fx_cache.get(key)
+        if cached and now - cached[0] < FX_CACHE_TTL_SECONDS:
+            return cached[1]
+    url = f"https://api.frankfurter.dev/v1/latest?base={base}&symbols={target}"
+    req = Request(url, headers={"User-Agent": "wallet-dashboard/1.0"})
+    with urlopen(req, timeout=10) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    rate = float(payload["rates"][target])
+    with fx_cache_lock:
+        fx_cache[key] = (now, rate)
+    return rate
+
+
 def summary():
     txs = query_transactions(5000)
     totals_by_currency = {}
+    totals_in_display_currency = {}
+    exchange_rates = {}
+    exchange_rate_errors = {}
     by_month = {}
     by_month_currency = {}
     by_merchant = {}
@@ -265,11 +295,25 @@ def summary():
         by_merchant[merchant] = by_merchant.get(merchant, 0) + cents
         category = t.get("category") or "Uncategorized"
         by_category[category] = by_category.get(category, 0) + cents
+    for currency, cents in totals_by_currency.items():
+        try:
+            rate = get_exchange_rate(currency, DISPLAY_CURRENCY)
+            exchange_rates[f"{currency}{DISPLAY_CURRENCY}"] = rate
+            totals_in_display_currency[currency] = cents * rate
+        except (KeyError, ValueError, URLError, HTTPError, TimeoutError, OSError) as exc:
+            exchange_rate_errors[currency] = str(exc)
+            if currency == DISPLAY_CURRENCY:
+                totals_in_display_currency[currency] = cents
     primary_currency = max(totals_by_currency.items(), key=lambda kv: abs(kv[1]))[0] if totals_by_currency else "CHF"
     return {
         "count": len(txs),
         "total": totals_by_currency.get(primary_currency, 0) / 100,
         "currency": primary_currency,
+        "display_currency": DISPLAY_CURRENCY,
+        "total_chf": round(sum(totals_in_display_currency.values()) / 100, 2),
+        "totals_in_chf": {k: round(v / 100, 2) for k, v in sorted(totals_in_display_currency.items())},
+        "exchange_rates": exchange_rates,
+        "exchange_rate_errors": exchange_rate_errors,
         "totals_by_currency": {k: v / 100 for k, v in sorted(totals_by_currency.items())},
         "by_month": dict(sorted(by_month.items(), reverse=True)),
         "by_month_currency": dict(sorted(by_month_currency.items(), reverse=True)),
