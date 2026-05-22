@@ -304,6 +304,19 @@ def summary():
             exchange_rate_errors[currency] = str(exc)
             if currency == DISPLAY_CURRENCY:
                 totals_in_display_currency[currency] = cents
+
+    by_month_display_components = {}
+    for month, currency_totals in by_month_currency.items():
+        by_month_display_components[month] = {}
+        for currency, cents in currency_totals.items():
+            rate = exchange_rates.get(f"{currency}{DISPLAY_CURRENCY}")
+            if rate is None and currency == DISPLAY_CURRENCY:
+                rate = 1.0
+            if rate is None:
+                continue
+            by_month_display_components[month][currency] = cents * rate
+    by_month_display = {month: sum(parts.values()) for month, parts in by_month_display_components.items()}
+
     primary_currency = max(totals_by_currency.items(), key=lambda kv: abs(kv[1]))[0] if totals_by_currency else "CHF"
     return {
         "count": len(txs),
@@ -317,6 +330,11 @@ def summary():
         "totals_by_currency": {k: v / 100 for k, v in sorted(totals_by_currency.items())},
         "by_month": dict(sorted(by_month.items(), reverse=True)),
         "by_month_currency": dict(sorted(by_month_currency.items(), reverse=True)),
+        "by_month_chf": {k: round(v / 100, 2) for k, v in sorted(by_month_display.items(), reverse=True)},
+        "by_month_chf_components": {
+            month: {currency: round(cents / 100, 2) for currency, cents in sorted(parts.items())}
+            for month, parts in sorted(by_month_display_components.items(), reverse=True)
+        },
         "by_merchant": dict(sorted(by_merchant.items(), key=lambda kv: abs(kv[1]), reverse=True)[:15]),
         "by_category": dict(sorted(by_category.items(), key=lambda kv: abs(kv[1]), reverse=True)),
     }

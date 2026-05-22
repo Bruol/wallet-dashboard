@@ -25,8 +25,8 @@ The dashboard shows:
 
 - total spend converted to CHF
 - transaction count
-- current-month spend per currency
-- monthly trend
+- current-month spend converted to CHF
+- monthly trend converted to CHF
 - top merchants
 - latest transactions
 
@@ -194,7 +194,7 @@ Health check.
 
 ### `GET /api/summary`
 
-Summary totals, monthly data, top merchants, and exchange-rate metadata. The `total_chf` field is computed by converting all currency totals to CHF via Frankfurter and caching rates in memory.
+Summary totals, monthly data, top merchants, and exchange-rate metadata. The `total_chf` and `by_month_chf` fields are computed by converting all currency totals to CHF via Frankfurter and caching rates in memory.
 
 ### `GET /api/transactions?limit=500`
 

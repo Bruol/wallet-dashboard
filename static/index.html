@@ -66,7 +66,7 @@
 const fmt = (n, currency='CHF') => new Intl.NumberFormat(undefined, {style:'currency', currency}).format(Number(n||0));
 const fmtMulti = totals => Object.entries(totals || {}).map(([currency, amount]) => fmt(amount, currency)).join(' + ') || '—';
 const fmtChfTotal = s => Number.isFinite(Number(s.total_chf)) ? fmt(s.total_chf, s.display_currency || 'CHF') : fmtMulti(s.totals_by_currency);
-const fmtMonth = (byMonthCurrency, ym) => fmtMulti(Object.fromEntries(Object.entries((byMonthCurrency || {})[ym] || {}).map(([currency, cents]) => [currency, Math.abs(cents/100)])));
+const fmtMonth = (s, ym) => Number.isFinite(Number((s.by_month_chf || {})[ym])) ? fmt(Math.abs(s.by_month_chf[ym]), s.display_currency || 'CHF') : fmtMulti(Object.fromEntries(Object.entries((s.by_month_currency || {})[ym] || {}).map(([currency, cents]) => [currency, Math.abs(cents/100)])));
 const dateFmt = s => s ? new Date(s).toLocaleString(undefined, {dateStyle:'medium', timeStyle:'short'}) : 'No date';
 let state = {transactions: [], summary: null};
 
@@ -90,8 +90,8 @@ function render(){
   document.getElementById('total').textContent = fmtChfTotal(s);
   document.getElementById('count').textContent = s.count || 0;
   const ym = new Date().toISOString().slice(0,7);
-  document.getElementById('month').textContent = fmtMonth(s.by_month_currency, ym);
-  renderChart(s.by_month||{}, currency);
+  document.getElementById('month').textContent = fmtMonth(s, ym);
+  renderChart(s.by_month_chf || {}, s.display_currency || 'CHF');
   renderMerchants(s.by_merchant||{}, currency);
   renderTxs(state.transactions, currency);
 }
@@ -100,7 +100,7 @@ function renderChart(byMonth, currency){
   const entries = Object.entries(byMonth).sort(([a],[b])=>a.localeCompare(b)).slice(-12);
   if(!entries.length){ el.innerHTML = '<div class="empty">No transactions yet</div>'; return; }
   const max = Math.max(...entries.map(([,v])=>Math.abs(v)), 1);
-  el.innerHTML = entries.map(([m,c]) => `<div class="barwrap" title="${m}: ${fmt(Math.abs(c/100), currency)}"><div class="bar" style="height:${Math.max(4, Math.abs(c)/max*220)}px"></div><div class="barlabel">${m.slice(5) || m}</div></div>`).join('');
+  el.innerHTML = entries.map(([m,amount]) => `<div class="barwrap" title="${m}: ${fmt(Math.abs(amount), currency)}"><div class="bar" style="height:${Math.max(4, Math.abs(amount)/max*220)}px"></div><div class="barlabel">${m.slice(5) || m}</div></div>`).join('');
 }
 function renderMerchants(byMerchant, currency){
   const el = document.getElementById('merchants');

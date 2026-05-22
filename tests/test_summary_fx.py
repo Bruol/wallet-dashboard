@@ -38,6 +38,25 @@ class SummaryFxTests(unittest.TestCase):
             self.assertEqual(result["exchange_rates"]["EURCHF"], 0.9)
             self.assertEqual(result["exchange_rate_errors"], {})
 
+    def test_summary_reports_monthly_spend_converted_to_chf(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            server = load_server(tmp)
+            server.init_db()
+            server.get_exchange_rate = lambda base, target="CHF": 0.9 if (base, target) == ("EUR", "CHF") else 1.0
+
+            for tx in (
+                server.normalize({"merchant": "May CHF", "amount": "CHF 10.00", "date": "2026-05-22T10:00:00+00:00"}),
+                server.normalize({"merchant": "May EUR", "amount": "€ 20.00", "date": "2026-05-23T10:00:00+00:00"}),
+                server.normalize({"merchant": "April EUR", "amount": "€ 5.00", "date": "2026-04-01T10:00:00+00:00"}),
+            ):
+                self.assertTrue(server.insert_transaction(tx))
+
+            result = server.summary()
+
+            self.assertEqual(result["by_month_chf"], {"2026-05": 28.0, "2026-04": 4.5})
+            self.assertEqual(result["by_month_chf_components"], {"2026-05": {"CHF": 10.0, "EUR": 18.0}, "2026-04": {"EUR": 4.5}})
+            self.assertEqual(result["exchange_rate_errors"], {})
+
 
 if __name__ == "__main__":
     unittest.main()
